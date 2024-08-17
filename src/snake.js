@@ -40,8 +40,7 @@ function calculatePosition(bodyPositions, direction, cellSize) {
     return newBodyPositions;
 }
 
-function changeDirection(nextDirection) {
-  let direction = DIRECTION.RIGHT;
+function changeDirection(nextDirection, direction) {
 
   switch(nextDirection) {
     case DIRECTION.LEFT:

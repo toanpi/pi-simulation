@@ -2,7 +2,9 @@
 	import { onMount, onDestroy } from 'svelte';
 	import {calculatePosition, changeDirection} from './snake';
 	import { generateFruitCoords } from './env';
-
+	import { clearRoom, drawSnake, drawFruit } from './graph';
+	import { initGame, GAME, startGame, endGame, checkRules } from './game';
+	
 	onMount(() => {
 		reset();
 		document.addEventListener('keydown', listenForKeyboard);
@@ -10,21 +12,17 @@
 	onDestroy(() => {
 		document.removeEventListener('keydown', listenForKeyboard);
 	});
+
 	const canvasSize = 240;
 	const snakeSize = 10;
-	const GAME = {
-		INIT: 'INITIALIZING',
-		READY: 'GAME_READY',
-		SETUP: 'GAME_SETUP',
-		PLAYING: 'GAME_PLAYING',
-		OVER: 'GAME_OVER',
-	}
+	
 	const DIRECTION = {
 		RIGHT: 'RIGHT',
 		LEFT: 'LEFT',
 		UP: 'UP',
 		DOWN: 'DOWN',
 	}
+	
 	const keys = {
 		'arrowup': DIRECTION.UP,
 		'arrowright': DIRECTION.RIGHT,
@@ -40,7 +38,7 @@
 	function listenForKeyboard(e) {
 		const key = e.key.toLowerCase()
 		if (acceptableKeys.includes(key)) {
-			direction = changeDirection(keys[key]);
+			direction = changeDirection(keys[key], direction);
 		}
 	}
 	
@@ -51,24 +49,12 @@
 	let direction; 
 	let bodyPositions = [];
 	let fruit;
-	$: score = (bodyPositions.length - 4) * 10;
-	$: highScore = score > highScore ? score : highScore || 0;
-	$: {
-		if (highScore !== 0) {
-			localStorage.setItem('snakeHighScore', highScore);
-		}
-	}
-	onMount(() => {
-		const hs = localStorage.getItem('snakeHighScore');
-		if (hs) {
-			highScore = hs;
-		}
-	});
 	
 	function reset() {
 		if (ctx) {
-			ctx.clearRect(0,0,canvasSize, canvasSize);
+			clearRoom(ctx);
 		}
+
 		speedMs = 200;
 		direction = DIRECTION.RIGHT; 
 		bodyPositions = [
@@ -76,83 +62,57 @@
 				{ x: 40, y: 50 },
 				{ x: 30, y: 50 },
 		];
-		gameState = GAME.READY;
+		gameState = initGame();
 		fruit = undefined;
 	}
 
 	function setupGame() {
 		canvas = document.getElementById('canvas');
 		ctx = canvas.getContext('2d');
-		gameState = GAME.PLAYING;
-		drawSnake();
+		gameState = startGame();
+		snakeMove();
 	}
 
-	function drawSnake() {
-		
+	function snakeMove() {
 		bodyPositions = calculatePosition(bodyPositions, direction, snakeSize);
+
+		console.log(bodyPositions);
 
 		bodyPositions.forEach(({ x, y }, i) => {
 			const isHead = i === 0;
-			// if next values break bounds of canvas, make game over
-		
-			if (
-					x >= canvasSize || 
-					x <= 0 - snakeSize || 
-					y >= canvasSize || 
-					y <= 0 - snakeSize
-			) {
-				console.log("Game over")
-				gameState = GAME.OVER;
-			}
 			
+			if (!checkRules(x, y, canvasSize, snakeSize)) {
+				gameState = endGame();
+			}
+
 			// if head touches fruit; remove it and add new body part
 			if (isHead && fruit && x === fruit.x && y === fruit.y) {
 					fruit = undefined;
 			}
 		});
 
-		
 		if (!fruit) {
 			const currentTail = bodyPositions[bodyPositions.length - 1];
 			bodyPositions = [...bodyPositions, { ...currentTail }];
 			speedMs *= .95;
+
+			fruit = generateFruitCoords(bodyPositions, canvasSize);
 		}
-		// if no fruit; create it!
-		createAndDrawFruit();
-		
-		ctx.fillStyle = 'green';
-		bodyPositions.forEach(({ x, y }) => {
-			ctx.fillRect(x, y, snakeSize, snakeSize);
-		});
-		
+
+		drawFruit(ctx, fruit);
+		drawSnake(ctx, bodyPositions);
+
 		// recursivley call, but check if boundaries are reached and end game
 		setTimeout(() => {
 			if (gameState !== GAME.OVER) {
-				// reset canvas then draw
-				ctx.clearRect(0,0,canvasSize, canvasSize);
-				drawSnake();	
+				clearRoom(ctx);
+				snakeMove();	
 			}
 		}, speedMs);
 	}
 
-	function createAndDrawFruit() {
-		if (!fruit) {
-			fruit = generateFruitCoords(bodyPositions, canvasSize);
-		}
-		ctx.fillStyle = 'red';
-		ctx.fillRect(fruit.x, fruit.y, snakeSize, snakeSize);
-	}
-
 </script>
 <main class="main">
-	<header>
-			<div>
-				Score: {bodyPositions.length !== 3 ? score : '0'}
-			</div>
-			<div>
-				High score: {highScore}
-			</div>
-	</header>
 	<div class="canvasContainer">
 		<canvas id="canvas" width={canvasSize} height={canvasSize}></canvas>
 		{#if gameState === GAME.OVER || gameState === GAME.READY}
@@ -185,13 +145,6 @@
 		justify-content: center;
 		width: 240px;
 		margin: 0 auto;
-	}
-	header {
-		width: 100%;
-		height: 42px;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
 	}
 	
 	#canvas {
